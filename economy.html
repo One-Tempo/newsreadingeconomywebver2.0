@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>ニュース読み上げ</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --text: #1a1a1a;
+    --text-sub: #667085;
+    --accent: #0a84ff;
+    --accent-text: #ffffff;
+    --active-bg: #e3f0ff;
+    --active-border: #0a84ff;
+    --border: #e4e7ec;
+    --control-bg: rgba(255, 255, 255, 0.92);
+    --overlay-bg: rgba(10, 20, 40, 0.94);
+    --error: #d92d20;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101418;
+      --card-bg: #1c2128;
+      --text: #f0f2f5;
+      --text-sub: #98a2b3;
+      --accent: #409cff;
+      --accent-text: #ffffff;
+      --active-bg: #16304d;
+      --active-border: #409cff;
+      --border: #2c333d;
+      --control-bg: rgba(22, 26, 32, 0.94);
+      --overlay-bg: rgba(0, 0, 0, 0.94);
+      --error: #f97066;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { font-size: 17px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding-bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+  header {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
+    text-align: center;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 700; }
+  #dateLine { font-size: 0.9rem; color: var(--text-sub); margin-top: 2px; }
+  #status {
+    font-size: 0.9rem;
+    color: var(--text-sub);
+    text-align: center;
+    padding: 6px 16px 10px;
+    min-height: 1.5em;
+  }
+  #status.error { color: var(--error); }
+
+  #newsList { padding: 0 12px; max-width: 640px; margin: 0 auto; }
+  .card {
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .card.active {
+    background: var(--active-bg);
+    border-color: var(--active-border);
+  }
+  .card .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text-sub);
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .card .num {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-radius: 999px;
+    padding: 1px 9px;
+    font-weight: 700;
+    font-size: 0.75rem;
+  }
+  .card .cat {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 8px;
+  }
+  .card h2 { font-size: 1.05rem; font-weight: 700; line-height: 1.45; }
+  .card p.desc { font-size: 0.92rem; color: var(--text-sub); margin-top: 6px; }
+  .card a.srclink {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  /* 下部固定コントロール */
+  #controls {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: var(--control-bg);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+    z-index: 100;
+  }
+  #controls .inner { max-width: 640px; margin: 0 auto; }
+  #progress {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-sub);
+    margin-bottom: 6px;
+    min-height: 1.2em;
+  }
+  .btnRow {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .btnRow button {
+    border: none;
+    border-radius: 50%;
+    width: 52px;
+    height: 52px;
+    font-size: 1.25rem;
+    background: var(--card-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btnRow button:active { opacity: 0.6; }
+  .btnRow button#btnPlay {
+    width: 66px;
+    height: 66px;
+    font-size: 1.6rem;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+  }
+  .rateRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--text-sub);
+  }
+  .rateRow input[type="range"] { flex: 1; height: 30px; accent-color: var(--accent); }
+  #rateVal { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* 全画面タップ開始オーバーレイ */
+  #tapOverlay {
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-bg);
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
+    padding: 24px;
+  }
+  #tapOverlay.show { display: flex; }
+  #tapOverlay .bigBtn {
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 24px 44px;
+    box-shadow: 0 6px 30px rgba(10, 132, 255, 0.5);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  #tapOverlay .hint { font-size: 0.95rem; opacity: 0.85; line-height: 1.7; }
+
+  .spinner {
+    display: inline-block;
+    width: 1em; height: 1em;
+    border: 2px solid var(--text-sub);
+    border-top-color: transparent;
+    border-radius: 50%;
+    vertical-align: -0.15em;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📻 今日のニュース</h1>
+  <div id="dateLine"></div>
+</header>
+<div id="status"><span class="spinner"></span> ニュースを取得中…</div>
+<main id="newsList"></main>
+
+<div id="controls">
+  <div class="inner">
+    <div id="progress"></div>
+    <div class="btnRow">
+      <button id="btnPrev" title="前へ" aria-label="前のニュース">⏮</button>
+      <button id="btnPlay" title="再生/一時停止" aria-label="再生・一時停止">▶</button>
+      <button id="btnNext" title="次へ" aria-label="次のニュース">⏭</button>
+      <button id="btnStop" title="停止" aria-label="停止">⏹</button>
+    </div>
+    <div class="rateRow">
+      <span>速度</span>
+      <input type="range" id="rateSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span id="rateVal">1.0倍</span>
+    </div>
+  </div>
+</div>
+
+<div id="tapOverlay">
+  <button class="bigBtn">▶ タップして読み上げ開始</button>
+  <div class="hint">iPhoneの設定により自動再生がブロックされました。<br>画面のどこかを1回タップすると読み上げが始まります。</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ================= URLパラメータ ================= */
+  const params = new URLSearchParams(location.search);
+  const AUTOPLAY = params.get("autoplay") !== "0";           // デフォルトON
+  const COUNT    = Math.min(Math.max(parseInt(params.get("count") || "10", 10) || 10, 1), 30);
+  const INITRATE = Math.min(Math.max(parseFloat(params.get("rate") || "1.0") || 1.0, 0.5), 2.0);
+  const CATEGORY = (params.get("category") || "all").toLowerCase(); // world / domestic / all
+
+  // カテゴリごとの件数指定（例: ?world=5&domestic=5&economy=5）。指定があれば category/count より優先
+  const PER_CAT = {};
+  ["domestic", "world", "economy", "general"].forEach(c => {
+    if (params.has(c)) PER_CAT[c] = Math.min(Math.max(parseInt(params.get(c), 10) || 0, 0), 30);
+  });
+  const USE_PER_CAT = Object.keys(PER_CAT).length > 0;
+
+  /* ================= フィード定義 ================= */
+  const FEEDS = [
+    { url: "https://www3.nhk.or.jp/rss/news/cat0.xml", source: "NHK", category: "domestic", label: "国内" },
+    { url: "https://www3.nhk.or.jp/rss/news/cat6.xml", source: "NHK", category: "world",    label: "国際" },
+    { url: "https://www3.nhk.or.jp/rss/news/cat5.xml", source: "NHK", category: "economy",  label: "経済" },
+    { url: "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ja&gl=JP&ceid=JP:ja", source: "Googleニュース", category: "economy", label: "経済" },
+    { url: "https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja", source: "Googleニュース", category: "general", label: "総合" }
+  ];
+
+  /* CORSプロキシ（順にフォールバック） */
+  const PROXIES = [
+    u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+    u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+    u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u)
+  ];
+
+  const $ = id => document.getElementById(id);
+  const statusEl = $("status"), listEl = $("newsList"), progressEl = $("progress");
+  const overlayEl = $("tapOverlay");
+  const btnPlay = $("btnPlay"), btnPrev = $("btnPrev"), btnNext = $("btnNext"), btnStop = $("btnStop");
+  const rateSlider = $("rateSlider"), rateVal = $("rateVal");
+
+  /* ================= 日付表示 ================= */
+  const now = new Date();
+  const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
+  $("dateLine").textContent =
+    now.getFullYear() + "年" + (now.getMonth() + 1) + "月" + now.getDate() + "日（" + WEEK[now.getDay()] + "）";
+
+  /* ================= ユーティリティ ================= */
+  function fetchWithTimeout(url, ms) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { signal: ctrl.signal, cache: "no-store" })
+      .finally(() => clearTimeout(timer));
+  }
+
+  function stripHtml(html) {
+    const div = document.createElement("div");
+    div.innerHTML = html || "";
+    return (div.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function cleanForSpeech(text) {
+    return (text || "")
+      .replace(/https?:\/\/\S+/g, "")     // URL除去
+      .replace(/[＜＞<>|｜]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /* タイトル類似判定（文字バイグラムのJaccard係数） */
+  function bigrams(s) {
+    const t = s.replace(/[\s、。・「」『』【】（）()\[\]!?！？:：\-–—]/g, "");
+    const set = new Set();
+    for (let i = 0; i < t.length - 1; i++) set.add(t.substr(i, 2));
+    return set;
+  }
+  function similar(a, b) {
+    const A = bigrams(a), B = bigrams(b);
+    if (A.size === 0 || B.size === 0) return a === b;
+    let inter = 0;
+    for (const g of A) if (B.has(g)) inter++;
+    return inter / (A.size + B.size - inter) > 0.5;
+  }
+
+  /* ================= RSS取得 ================= */
+  async function fetchFeed(feed) {
+    for (const proxy of PROXIES) {
+      try {
+        const res = await fetchWithTimeout(proxy(feed.url), 8000);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const text = await res.text();
+        const doc = new DOMParser().parseFromString(text, "text/xml");
+        if (doc.querySelector("parsererror")) throw new Error("XML parse error");
+        const items = [];
+        doc.querySelectorAll("item").forEach(item => {
+          const get = tag => {
+            const el = item.querySelector(tag);
+            return el ? el.textContent.trim() : "";
+          };
+          let title = get("title");
+          let desc = stripHtml(get("description"));
+          let source = feed.source;
+          // Googleニュースはタイトル末尾に「 - 媒体名」が付く
+          if (feed.source === "Googleニュース") {
+            const srcEl = item.querySelector("source");
+            if (srcEl) source = srcEl.textContent.trim();
+            const m = title.match(/^(.*)\s[-–]\s([^-–]+)$/);
+            if (m) { title = m[1].trim(); if (!srcEl) source = m[2].trim(); }
+            desc = ""; // GoogleニュースのdescriptionはリンクHTMLのみなので使わない
+          }
+          if (!title) return;
+          items.push({
+            title, desc, source,
+            category: feed.category,
+            catLabel: feed.label,
+            link: get("link"),
+            pubDate: new Date(get("pubDate") || 0)
+          });
+        });
+        return items;
+      } catch (e) { /* 次のプロキシへ */ }
+    }
+    return []; // 全プロキシ失敗 → このフィードは諦めて続行
+  }
+
+  async function fetchAllNews() {
+    let feeds = FEEDS;
+    if (USE_PER_CAT) {
+      feeds = FEEDS.filter(f => (PER_CAT[f.category] || 0) > 0);
+    } else if (CATEGORY === "world") {
+      feeds = FEEDS.filter(f => f.category === "world");
+    } else if (CATEGORY === "domestic") {
+      feeds = FEEDS.filter(f => f.category === "domestic");
+    } else if (CATEGORY === "economy") {
+      feeds = FEEDS.filter(f => f.category === "economy");
+    }
+
+    const results = await Promise.all(feeds.map(fetchFeed));
+    let all = results.flat();
+
+    // 新しい順に並べ、タイトル類似で重複除外
+    all.sort((a, b) => b.pubDate - a.pubDate);
+    const unique = [];
+    for (const item of all) {
+      if (!unique.some(u => similar(u.title, item.title))) unique.push(item);
+    }
+
+    // カテゴリごとの件数指定時は 国際→経済→国内→総合 の順で各カテゴリ上位N件を並べる
+    if (USE_PER_CAT) {
+      const picked = [];
+      for (const cat of ["world", "economy", "domestic", "general"]) {
+        const n = PER_CAT[cat] || 0;
+        if (n > 0) picked.push(...unique.filter(i => i.category === cat).slice(0, n));
+      }
+      return picked;
+    }
+    return unique.slice(0, COUNT);
+  }
+
+  /* ================= 画面描画 ================= */
+  function timeStr(d) {
+    if (!(d instanceof Date) || isNaN(d)) return "";
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  function render(items) {
+    listEl.innerHTML = "";
+    items.forEach((item, i) => {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.id = "card-" + i;
+      const h2 = document.createElement("h2");
+      h2.textContent = item.title;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML =
+        '<span class="num">' + (i + 1) + '</span>' +
+        '<span class="cat">' + item.catLabel + '</span>' +
+        '<span>' + escapeHtml(item.source) + '</span>' +
+        '<span>' + timeStr(item.pubDate) + '</span>';
+      card.appendChild(meta);
+      card.appendChild(h2);
+      if (item.desc) {
+        const p = document.createElement("p");
+        p.className = "desc";
+        p.textContent = item.desc;
+        card.appendChild(p);
+      }
+      if (item.link) {
+        const a = document.createElement("a");
+        a.className = "srclink";
+        a.href = item.link;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = "元記事を読む →";
+        card.appendChild(a);
+      }
+      listEl.appendChild(card);
+    });
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /* ================= 読み上げエンジン ================= */
+  /*
+   * iOS Safari 対策:
+   *  - getVoices() が非同期で遅れて返る → voiceschanged を待つ（タイムアウト付き）
+   *  - 長文で途中停止するバグ → 文単位に分割して onend で順次 speak
+   *  - 無操作の自動再生ブロック → onstart が来なければ全画面タップボタンを表示
+   *  - pause() が不安定 → 一時停止は cancel() + 位置記憶で実装し、再開は文頭から
+   */
+  const Engine = {
+    units: [],        // { itemIdx, sentences[] }  itemIdx: -1=挨拶, 0..n-1=ニュース, -2=締め
+    unitIdx: 0,
+    sentIdx: 0,
+    rate: INITRATE,
+    voice: null,
+    playing: false,   // 読み上げセッション中か（一時停止中は false）
+    finished: false,
+    started: false    // 一度でも onstart が来たか（自動再生成功判定）
+  };
+
+  function loadVoices() {
+    return new Promise(resolve => {
+      const pick = () => {
+        const voices = speechSynthesis.getVoices();
+        const ja = voices.filter(v => (v.lang || "").replace("_", "-").toLowerCase().startsWith("ja"));
+        // Kyoko等のローカル日本語音声を優先
+        Engine.voice =
+          ja.find(v => /kyoko|o-?ren|hattori/i.test(v.name)) ||
+          ja.find(v => v.localService) ||
+          ja[0] || null;
+        resolve();
+      };
+      if (speechSynthesis.getVoices().length > 0) { pick(); return; }
+      let done = false;
+      speechSynthesis.addEventListener("voiceschanged", () => { if (!done) { done = true; pick(); } }, { once: true });
+      setTimeout(() => { if (!done) { done = true; pick(); } }, 2000); // 来なくても続行
+    });
+  }
+
+  /* 文単位に分割（長い文はさらに読点で分割、iOSの長文停止バグ対策） */
+  function splitSentences(text) {
+    const raw = text.match(/[^。！？\n]+[。！？]?/g) || [text];
+    const out = [];
+    for (let s of raw) {
+      s = s.trim();
+      if (!s) continue;
+      while (s.length > 120) {
+        let cut = s.lastIndexOf("、", 120);
+        if (cut < 40) cut = 120;
+        out.push(s.slice(0, cut + 1));
+        s = s.slice(cut + 1);
+      }
+      if (s) out.push(s);
+    }
+    return out;
+  }
+
+  function buildUnits(items) {
+    const units = [];
+    const opening = "おはようございます。" +
+      (now.getMonth() + 1) + "月" + now.getDate() + "日、" + WEEK[now.getDay()] + "曜日、" +
+      "今日のニュースをお伝えします。全" + items.length + "件です。";
+    units.push({ itemIdx: -1, sentences: splitSentences(opening) });
+    items.forEach((item, i) => {
+      let text = (i + 1) + "件目、" + item.catLabel + "。" + cleanForSpeech(item.title) + "。";
+      if (item.desc) text += cleanForSpeech(item.desc);
+      if (!/[。！？]$/.test(text)) text += "。";
+      units.push({ itemIdx: i, sentences: splitSentences(text) });
+    });
+    units.push({ itemIdx: -2, sentences: splitSentences("以上、今日のニュースでした。") });
+    Engine.units = units;
+  }
+
+  function highlight(itemIdx) {
+    document.querySelectorAll(".card.active").forEach(el => el.classList.remove("active"));
+    if (itemIdx >= 0) {
+      const card = $("card-" + itemIdx);
+      if (card) {
+        card.classList.add("active");
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const total = Engine.units.length - 2; // ニュース件数
+    const u = Engine.units[Engine.unitIdx];
+    if (!u) { progressEl.textContent = ""; return; }
+    if (Engine.finished)       progressEl.textContent = "読み上げ終了";
+    else if (u.itemIdx === -1) progressEl.textContent = "オープニング";
+    else if (u.itemIdx === -2) progressEl.textContent = "エンディング";
+    else progressEl.textContent = (u.itemIdx + 1) + " / " + total + " 件目" + (Engine.playing ? "" : "（一時停止中）");
+  }
+
+  function speakCurrent() {
+    if (!Engine.playing) return;
+    const unit = Engine.units[Engine.unitIdx];
+    if (!unit) { finish(); return; }
+    if (Engine.sentIdx === 0) highlight(unit.itemIdx);
+
+    const sentence = unit.sentences[Engine.sentIdx];
+    if (sentence == null) { // このユニットは終わり → 次へ
+      Engine.unitIdx++;
+      Engine.sentIdx = 0;
+      if (Engine.unitIdx >= Engine.units.length) { finish(); return; }
+      speakCurrent();
+      return;
+    }
+
+    const u = new SpeechSynthesisUtterance(sentence);
+    u.lang = "ja-JP";
+    if (Engine.voice) u.voice = Engine.voice;
+    u.rate = Engine.rate;
+    u.pitch = 1.0;
+    u.onstart = () => { Engine.started = true; hideOverlay(); };
+    u.onend = () => {
+      if (!Engine.playing) return; // 停止/一時停止された
+      Engine.sentIdx++;
+      speakCurrent();
+    };
+    u.onerror = e => {
+      // interrupted/canceled は停止操作によるものなので無視
+      if (e.error === "interrupted" || e.error === "canceled") return;
+      if (!Engine.playing) return;
+      Engine.sentIdx++;   // エラーの文は飛ばして続行
+      speakCurrent();
+    };
+    speechSynthesis.speak(u);
+  }
+
+  function play() {
+    if (Engine.units.length === 0) return;
+    if (Engine.finished) { Engine.unitIdx = 0; Engine.sentIdx = 0; Engine.finished = false; }
+    speechSynthesis.cancel();
+    Engine.playing = true;
+    btnPlay.textContent = "⏸";
+    updateProgress();
+    // cancel() 直後の speak() が無視されるブラウザがあるため少し待つ
+    setTimeout(speakCurrent, 60);
+  }
+
+  function pause() {
+    Engine.playing = false;
+    speechSynthesis.cancel(); // iOSのpause()は不安定なのでcancel+位置記憶で再開
+    btnPlay.textContent = "▶";
+    updateProgress();
+  }
+
+  function stop() {
+    Engine.playing = false;
+    Engine.finished = false;
+    Engine.unitIdx = 0;
+    Engine.sentIdx = 0;
+    speechSynthesis.cancel();
+    btnPlay.textContent = "▶";
+    highlight(-1);
+    progressEl.textContent = "停止しました";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function finish() {
+    Engine.playing = false;
+    Engine.finished = true;
+    btnPlay.textContent = "▶";
+    highlight(-1);
+    updateProgress();
+  }
+
+  function jump(delta) {
+    if (Engine.units.length === 0) return;
+    const wasPlaying = Engine.playing;
+    speechSynthesis.cancel();
+    Engine.playing = false;
+    // 現在のニュース番号を基準に前後へ
+    let cur = Engine.units[Engine.unitIdx] ? Engine.units[Engine.unitIdx].itemIdx : -1;
+    if (cur < 0) cur = (Engine.unitIdx === 0) ? -1 : Engine.units.length - 3;
+    let target = cur + delta;
+    const maxIdx = Engine.units.length - 3; // ニュースの最終index
+    target = Math.min(Math.max(target, 0), maxIdx);
+    Engine.unitIdx = target + 1; // units[0]は挨拶なので+1
+    Engine.sentIdx = 0;
+    Engine.finished = false;
+    highlight(target);
+    if (wasPlaying || Engine.started) {
+      Engine.playing = true;
+      btnPlay.textContent = "⏸";
+      setTimeout(speakCurrent, 60);
+    }
+  }
+
+  /* iOS/Chromeで読み上げが黙り込むのを防ぐ保険（resume定期実行） */
+  setInterval(() => {
+    if (Engine.playing && speechSynthesis.speaking && !speechSynthesis.paused) {
+      speechSynthesis.resume();
+    }
+  }, 5000);
+
+  /* ================= オーバーレイ ================= */
+  function showOverlay() { overlayEl.classList.add("show"); }
+  function hideOverlay() { overlayEl.classList.remove("show"); }
+  overlayEl.addEventListener("click", () => {
+    hideOverlay();
+    play(); // ユーザー操作起点のspeak()なのでiOSでも再生される
+  });
+
+  /* ================= コントロール ================= */
+  btnPlay.addEventListener("click", () => { Engine.playing ? pause() : play(); });
+  btnPrev.addEventListener("click", () => jump(-1));
+  btnNext.addEventListener("click", () => jump(1));
+  btnStop.addEventListener("click", stop);
+
+  rateSlider.value = INITRATE;
+  rateVal.textContent = INITRATE.toFixed(1) + "倍";
+  rateSlider.addEventListener("input", () => {
+    Engine.rate = parseFloat(rateSlider.value);
+    rateVal.textContent = Engine.rate.toFixed(1) + "倍";
+    // 再生中なら現在の文から新しい速度で読み直す
+    if (Engine.playing) {
+      speechSynthesis.cancel();
+      setTimeout(speakCurrent, 60);
+    }
+  });
+
+  // ページ非表示→復帰時にiOSが発話を落とすことがあるため再開を試みる
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && Engine.playing && !speechSynthesis.speaking) {
+      setTimeout(speakCurrent, 200);
+    }
+  });
+
+  /* ================= 起動シーケンス ================= */
+  async function main() {
+    if (!("speechSynthesis" in window)) {
+      statusEl.textContent = "このブラウザは音声読み上げ（speechSynthesis）に対応していません。";
+      statusEl.classList.add("error");
+    }
+
+    let items = [];
+    try {
+      [items] = await Promise.all([fetchAllNews(), loadVoices()]);
+    } catch (e) {
+      items = [];
+    }
+
+    if (items.length === 0) {
+      statusEl.textContent = "ニュースを取得できませんでした。通信環境を確認して再読み込みしてください。";
+      statusEl.classList.add("error");
+      progressEl.textContent = "";
+      return;
+    }
+
+    statusEl.textContent = "全" + items.length + "件のニュースを取得しました";
+    render(items);
+    buildUnits(items);
+    updateProgress();
+
+    if (!("speechSynthesis" in window)) return;
+
+    if (AUTOPLAY) {
+      play();
+      // 1.5秒待って発話が始まっていなければ自動再生ブロックと判断
+      setTimeout(() => {
+        if (!Engine.started && !speechSynthesis.speaking) {
+          Engine.playing = false;
+          speechSynthesis.cancel();
+          btnPlay.textContent = "▶";
+          showOverlay();
+        }
+      }, 1500);
+    }
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>
